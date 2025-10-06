@@ -1,4 +1,5 @@
 name: CI/CD Deployment Pipeline (Outstanding Level)
+
 permissions:
   contents: write
 
@@ -18,12 +19,12 @@ jobs:
       version: ${{ steps.version.outputs.NEW_TAG }}
     strategy:
       matrix:
-        node: [18, 20]  # 在 Node 18 與 Node 20 同時測試
+        node: [18, 20]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 取得完整 git 歷史以便讀取 tags
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,6 +43,7 @@ jobs:
           NEW_TAG=$(echo $LAST_TAG | awk -F. -v OFS=. '{$NF += 1 ; print}')
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "📦 New Version: $NEW_TAG"
+
       - name: Generate Changelog
         id: changelog
         run: |
@@ -60,11 +62,21 @@ jobs:
           bun run build
           zip -r build.zip .
 
-      - name: Run Lint and Tests
+      - name: Run Lint and Tests (Fail Fast but tolerant)
         run: |
-          bun run lint || echo "⚠️ No lint configured"
-          bun run test || echo "✅ Tests passed"
+          echo "🔍 Running lint..."
+          if bun run | grep -q "lint"; then
+            bun run lint
+          else
+            echo "⚠️ No lint script found, skipping lint."
+          fi
 
+          echo "🧪 Running tests..."
+          if bun run | grep -q "test"; then
+            bun run test
+          else
+            echo "⚠️ No test script found, skipping tests."
+          fi
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
@@ -96,41 +108,33 @@ jobs:
       - name: Verify artifact
         run: ls -lh
   
-
       - name: Create or Update Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="dev-${{ needs.build.outputs.version }}"
-          NOTE="Development build $TAG"
-          echo "🚀 Deploying $TAG"
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing dev release..."
-            gh release upload "$TAG" build.zip --clobber
-            gh release edit "$TAG" --notes "$NOTE"
-          else
-            echo "🆕 Creating new dev release..."
-            gh release create "$TAG" build.zip --notes "$NOTE"
-          fi
-
-      - name: Create or Update Dev Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEV_TOKEN: ${{ secrets.DEV_TOKEN }}
         run: |
           TAG="dev-${{ needs.build.outputs.version }}"
           NOTE="🧾 Changelog:\n${CHANGELOG}\n\nDevelopment build $TAG"
           echo "🚀 Deploying $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing dev release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
-            echo "🆕 Creating new dev release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-      - name: Notify GitHub
+          echo "🔐 Using DEV token (len=${#DEV_TOKEN})"
+
+      - name: Notify PR / Issue
         if: always()
-        run: echo "✅ Dev deployment ${{ needs.build.outputs.version }} finished successfully"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=$(gh pr list --state open --json url --jq '.[0].url' || echo "")
+          if [ -n "$PR_URL" ]; then
+            gh pr comment "$PR_URL" --body "✅ Dev deployment done for $TAG"
+          else
+            echo "⚠️ No open PR found to comment on."
+          fi
 
   # ===============================
   # 🧪 Job 3：部署至 staging 環境
@@ -156,18 +160,18 @@ jobs:
       - name: Create or Update Staging Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STG_TOKEN: ${{ secrets.STG_TOKEN }}
         run: |
           TAG="staging-${{ needs.build.outputs.version }}"
-          NOTE="🧪 Pre-production test build $TAG"
+          NOTE="🧪 Staging build $TAG\n\n${CHANGELOG}"
           echo "🚀 Deploying staging release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing staging release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
-            echo "🆕 Creating new staging release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+          echo "🔐 Using STG token (len=${#STG_TOKEN})"
 
       - name: Slack Notification
         if: always()
@@ -177,6 +181,16 @@ jobs:
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\"🧩 Staging release *${{ needs.build.outputs.version }}* completed successfully.\"}" \
             $WEBHOOK_URL || echo "⚠️ Slack not configured"
+
+      - name: Notify PR / Issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=$(gh pr list --state open --json url --jq '.[0].url' || echo "")
+          if [ -n "$PR_URL" ]; then
+            gh pr comment "$PR_URL" --body "✅ Staging deployment done for $TAG"
+          fi
 
   # ===============================
   # 🎯 Job 4：部署至 production 環境（需人工批准）
@@ -202,20 +216,29 @@ jobs:
       - name: Create Production Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROD_TOKEN: ${{ secrets.PROD_TOKEN }}
         run: |
           TAG="prod-${{ needs.build.outputs.version }}"
+          NOTE="🚀 Official production release\n\n${CHANGELOG}"
           echo "🚀 Creating production release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing production release..."
             gh release upload "$TAG" build.zip --clobber
-            gh release edit "$TAG" --notes "Updated official production release"
+            gh release edit "$TAG" --notes "$NOTE"
           else
-            echo "🆕 Creating new production release..."
-            gh release create "$TAG" build.zip --notes "🚀 Official production release"
+            gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+          echo "🔐 Using PROD token (len=${#PROD_TOKEN})"
 
       - name: Rollback on Failure
         if: failure()
         run: |
           echo "⚠️ Production deployment failed — rolling back..."
           gh release delete "prod-${{ needs.build.outputs.version }}" --yes || echo "No rollback needed"
+
+      - name: Notify PR / Issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=$(gh pr list --state open --json url --jq '.[0].url' || echo "")
+          [ -n "$PR_URL" ] && gh pr comment "$PR_URL" --body "🚀 Production deployment done for $TAG"
