@@ -342,7 +342,10 @@ jobs:
             echo "🆕 Creating new production release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-
+      - name: Simulate Failure
+        run: |
+          echo "❌ Intentionally causing failure to test rollback..."
+          exit 1
       # 📧 PR / Issue 通知
       - name: Notify PR/Issue on Production Deployment
         if: always()
