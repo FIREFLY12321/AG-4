@@ -16,12 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [18, 20]   # 💡 同時測試兩個 Node 版本
+        node: [18, 20]  # 在 Node 18 與 Node 20 同時測試
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node ${{ matrix.node }}
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
@@ -45,19 +45,12 @@ jobs:
           bun install
           echo "🏗️ Building project..."
           bun run build
-          echo "📁 Packaging build files..."
           zip -r build.zip .
 
       - name: Run Lint and Tests
         run: |
-          echo "🧪 Running lint/test..."
           bun run lint || echo "⚠️ No lint configured"
-          bun run test || echo "✅ Tests passed (simulated)"
-
-     #- name: Verify build output
-      #  run: |
-      #    echo "✅ Build artifact created:"
-       #   ls -lh build.zip
+          bun run test || echo "✅ Tests passed"
 
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
@@ -69,45 +62,45 @@ jobs:
   # ===============================
   # 🚀 Job 2：部署至 dev 環境
   # ===============================
-    deploy-dev:
-      name: Deploy to Development
-      needs: build
-      runs-on: ubuntu-latest
-      environment: dev
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v4
+  deploy-dev:
+    name: Deploy to Development
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install GitHub CLI
+        run: sudo apt install gh -y
+        
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-artifact-*
+          merge-multiple: true
           
-        - name: Install GitHub CLI
-          run: sudo apt install gh -y
-          
-        - name: Download all build artifacts
-          uses: actions/download-artifact@v4
-          with:
-            pattern: build-artifact-*
-            merge-multiple: true
-            
-        - name: Verify artifact
-          run: ls -lh
+      - name: Verify artifact
+        run: ls -lh
   
-        - name: Create or Update Dev Release
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          run: |
-            TAG="dev-${{ env.NEW_TAG }}"
-            NOTE="Development build $TAG"
-            echo "🚀 Deploying $TAG"
-            if gh release view "$TAG" > /dev/null 2>&1; then
-              echo "♻️ Updating existing dev release..."
-              gh release upload "$TAG" build.zip --clobber
-              gh release edit "$TAG" --notes "$NOTE"
-            else
-              echo "🆕 Creating new dev release..."
-              gh release create "$TAG" build.zip --notes "$NOTE"
-            fi
-        - name: Notify GitHub
-          if: always()
-          run: echo "✅ Dev deployment ${{ env.NEW_TAG }} finished successfully"
+      - name: Create or Update Dev Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="dev-${{ env.NEW_TAG }}"
+          NOTE="Development build $TAG"
+          echo "🚀 Deploying $TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "♻️ Updating existing dev release..."
+            gh release upload "$TAG" build.zip --clobber
+            gh release edit "$TAG" --notes "$NOTE"
+          else
+            echo "🆕 Creating new dev release..."
+            gh release create "$TAG" build.zip --notes "$NOTE"
+          fi
+      - name: Notify GitHub
+        if: always()
+        run: echo "✅ Dev deployment ${{ env.NEW_TAG }} finished successfully"
 
   # ===============================
   # 🧪 Job 3：部署至 staging 環境
@@ -120,15 +113,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+  
       - name: Install GitHub CLI
         run: sudo apt install gh -y
-
-      - name: Download build artifact
+  
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifact
-
+          pattern: build-artifact-*
+          merge-multiple: true
+  
       - name: Create or Update Staging Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -169,10 +163,11 @@ jobs:
       - name: Install GitHub CLI
         run: sudo apt install gh -y
 
-      - name: Download build artifact
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifact
+          pattern: build-artifact-*
+          merge-multiple: true
 
       - name: Create Production Release
         env:
