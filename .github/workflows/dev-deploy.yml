@@ -14,12 +14,16 @@ jobs:
   build:
     name: Build and Test (Matrix)
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.NEW_TAG }}
     strategy:
       matrix:
         node: [18, 20]  # 在 Node 18 與 Node 20 同時測試
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 取得完整 git 歷史以便讀取 tags
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,7 +40,7 @@ jobs:
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           NEW_TAG=$(echo $LAST_TAG | awk -F. -v OFS=. '{$NF += 1 ; print}')
-          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "📦 New Version: $NEW_TAG"
 
       - name: Install dependencies and build
@@ -70,16 +74,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+          
       - name: Install GitHub CLI
         run: sudo apt install gh -y
-        
+          
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
-          
+            
       - name: Verify artifact
         run: ls -lh
   
@@ -87,7 +91,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="dev-${{ env.NEW_TAG }}"
+          TAG="dev-${{ needs.build.outputs.version }}"
           NOTE="Development build $TAG"
           echo "🚀 Deploying $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
@@ -100,14 +104,14 @@ jobs:
           fi
       - name: Notify GitHub
         if: always()
-        run: echo "✅ Dev deployment ${{ env.NEW_TAG }} finished successfully"
+        run: echo "✅ Dev deployment ${{ needs.build.outputs.version }} finished successfully"
 
   # ===============================
   # 🧪 Job 3：部署至 staging 環境
   # ===============================
   deploy-staging:
     name: Deploy to Staging
-    needs: build
+    needs: [build, deploy-dev]
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -127,7 +131,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="staging-${{ env.NEW_TAG }}"
+          TAG="staging-${{ needs.build.outputs.version }}"
           NOTE="🧪 Pre-production test build $TAG"
           echo "🚀 Deploying staging release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
@@ -145,7 +149,7 @@ jobs:
           WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"🧩 Staging release *${{ env.NEW_TAG }}* completed successfully.\"}" \
+            --data "{\"text\":\"🧩 Staging release *${{ needs.build.outputs.version }}* completed successfully.\"}" \
             $WEBHOOK_URL || echo "⚠️ Slack not configured"
 
   # ===============================
@@ -153,7 +157,7 @@ jobs:
   # ===============================
   deploy-production:
     name: Deploy to Production
-    needs: deploy-staging
+    needs: [build, deploy-staging]
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -173,7 +177,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="prod-${{ env.NEW_TAG }}"
+          TAG="prod-${{ needs.build.outputs.version }}"
           echo "🚀 Creating production release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "♻️ Updating existing production release..."
@@ -188,4 +192,4 @@ jobs:
         if: failure()
         run: |
           echo "⚠️ Production deployment failed — rolling back..."
-          gh release delete "prod-${{ env.NEW_TAG }}" --yes || echo "No rollback needed"
+          gh release delete "prod-${{ needs.build.outputs.version }}" --yes || echo "No rollback needed"
