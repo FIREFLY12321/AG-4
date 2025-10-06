@@ -63,6 +63,11 @@ jobs:
           echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+      - name: Save changelog as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: changelog.txt
 
       # 🧪 Pre-build lint/test gate (Fail Fast)
       - name: 🔍 Pre-build Quality Gate
@@ -342,10 +347,11 @@ jobs:
             echo "🆕 Creating new production release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-      - name: Simulate Failure
-        run: |
-          echo "❌ Intentionally causing failure to test rollback..."
-          exit 1
+      - name: Save changelog as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: changelog.txt
       # 📧 PR / Issue 通知
       - name: Notify PR/Issue on Production Deployment
         if: always()
