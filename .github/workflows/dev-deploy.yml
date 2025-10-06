@@ -35,7 +35,8 @@ jobs:
       - name: Install dependencies
         run: |
           echo "📦 Installing dependencies..."
-          npm ci
+          npm install
+          # 可視情況加入安全審查: npm audit fix
       
       - name: Build project
         run: |
