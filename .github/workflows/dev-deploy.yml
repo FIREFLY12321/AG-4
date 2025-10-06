@@ -1,0 +1,62 @@
+name: CI Dev Deployment
+
+# 🔹 觸發時機：當 main 分支有 push 時執行
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  # ===============================
+  # 🏗️ Job 1：建置階段
+  # ===============================
+  build:
+    name: Build and Upload Artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: 下載 repo 內容
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: 安裝依賴與建置
+      - name: Install dependencies and build
+        run: |
+          echo "📦 Installing dependencies..."
+          npm install
+          echo "🏗️ Building project..."
+          npm run build
+          echo "📁 Packaging build files..."
+          zip -r build.zip .
+
+      # Step 3: 上傳打包後的 artifact
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: build.zip
+
+  # ===============================
+  # 🚀 Job 2：部署至 dev 環境
+  # ===============================
+  deploy-dev:
+    name: Deploy to Development
+    needs: build        # ← 依賴前一個 job
+    runs-on: ubuntu-latest
+    environment: dev    # ← 使用 dev 環境 (你在第1部分建立的)
+
+    steps:
+      # Step 1: 下載上個 job 的 build artifact
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+
+      # Step 2: 建立新的 GitHub Release
+      - name: Create Dev Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ vars.BUILD_TAG }}
+          NOTE: ${{ vars.RELEASE_NOTE }}
+        run: |
+          echo "🚀 Creating release for tag: $TAG"
+          gh release create "$TAG" build.zip --notes "$NOTE"
