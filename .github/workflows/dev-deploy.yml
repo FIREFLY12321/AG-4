@@ -23,7 +23,6 @@ jobs:
     strategy:
       matrix:
         node: [18, 20]
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +39,6 @@ jobs:
         with:
           bun-version: latest
 
-      # 📦 自動遞增版本號
       - name: Generate Semantic Version
         id: version
         run: |
@@ -49,18 +47,24 @@ jobs:
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "📦 New Version: $NEW_TAG"
 
-      # 🧾 產生 changelog
+      # 🧾 自動產生 changelog
       - name: Generate Changelog
-        if: matrix.node == 18
+        id: changelog
+        if: matrix.node == 18  # 只在一個 matrix 執行
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -z "$LAST_TAG" ]; then
-            git log --oneline --pretty=format:"- %s (%h)" | head -20 > changelog.txt
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" | head -20)
           else
-            git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s (%h)" > changelog.txt
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s (%h)")
           fi
-          echo "📝 changelog.txt generated"
-      
+          echo "📝 Changelog generated"
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" > changelog.txt
+
+      # ✅ 新增：將 changelog 作為 artifact 儲存
       - name: Save changelog as artifact
         if: matrix.node == 18
         uses: actions/upload-artifact@v4
@@ -68,34 +72,46 @@ jobs:
           name: changelog
           path: changelog.txt
 
-      # 🧪 Quality Gate：Lint + Test
+      # 🧪 Pre-build lint/test gate (Fail Fast)
       - name: 🔍 Pre-build Quality Gate
         run: |
-          echo "🔍 Running quality checks..."
+          echo "🔍 Running quality checks before build..."
+          
+          # Lint check (skip if not configured, fail if configured but fails)
+          echo "Running lint..."
           set +e
           LINT_OUTPUT=$(bun run lint 2>&1)
           LINT_EXIT=$?
-          TEST_OUTPUT=$(bun run test 2>&1)
-          TEST_EXIT=$?
           set -e
-
-          if echo "$LINT_OUTPUT" | grep -qi "was not found"; then
-            echo "⚠️ No lint script - skipped"
+          
+          if echo "$LINT_OUTPUT" | grep -qi "was not found\|script not found"; then
+            echo "⚠️ Warning: No lint script configured - skipping"
           elif [ $LINT_EXIT -ne 0 ]; then
+            echo "❌ Lint failed - stopping build"
             echo "$LINT_OUTPUT"
             exit 1
           else
             echo "✅ Lint passed"
           fi
-
-          if echo "$TEST_OUTPUT" | grep -qi "was not found"; then
-            echo "⚠️ No test script - skipped"
+          
+          # Test check (skip if not configured, fail if configured but fails)
+          echo "Running tests..."
+          set +e
+          TEST_OUTPUT=$(bun run test 2>&1)
+          TEST_EXIT=$?
+          set -e
+          
+          if echo "$TEST_OUTPUT" | grep -qi "was not found\|script not found"; then
+            echo "⚠️ Warning: No test script configured - skipping"
           elif [ $TEST_EXIT -ne 0 ]; then
+            echo "❌ Tests failed - stopping build"
             echo "$TEST_OUTPUT"
             exit 1
           else
             echo "✅ Tests passed"
           fi
+          
+          echo "✅ Quality gate passed"
 
       - name: Install dependencies and build
         run: |
@@ -105,7 +121,7 @@ jobs:
           bun run build
           zip -r build.zip .
 
-      - name: Upload build artifact (per Node)
+      - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-${{ matrix.node }}
@@ -123,21 +139,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+          
       - name: Install GitHub CLI
         run: sudo apt install gh -y
-
-      - name: Download build artifact
+          
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
 
+      # ✅ 新增：下載 changelog artifact
       - name: Download changelog
         uses: actions/download-artifact@v4
         with:
           name: changelog
-
+          
+      - name: Verify artifact
+        run: ls -lh
+  
+      # 🔐 使用環境專屬 Secrets
       - name: Create or Update Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.DEV_TOKEN || secrets.GITHUB_TOKEN }}
@@ -145,15 +166,16 @@ jobs:
           TAG="dev-${{ needs.build.outputs.version }}"
           CHANGELOG=$(cat changelog.txt)
           NOTE="Development build $TAG
-
-          ## 📝 Changes:
+          ## 📝 Changes in this release:
           $CHANGELOG"
-          echo "🚀 Deploying Dev $TAG"
-
+          
+          echo "🚀 Deploying $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "♻️ Updating existing dev release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
+            echo "🆕 Creating new dev release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
 
@@ -168,37 +190,40 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+  
       - name: Install GitHub CLI
         run: sudo apt install gh -y
-
-      - name: Download build artifact
+  
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
 
+      # ✅ 新增：下載 changelog artifact
       - name: Download changelog
         uses: actions/download-artifact@v4
         with:
           name: changelog
-
+  
       - name: Create or Update Staging Release
         env:
           GITHUB_TOKEN: ${{ secrets.STG_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           TAG="staging-${{ needs.build.outputs.version }}"
           CHANGELOG=$(cat changelog.txt)
-          NOTE="🧪 Staging build $TAG
-
-          ## 📝 Changes:
+          NOTE="🧪 Pre-production test build $TAG
+          
+          ## 📝 Changes in this release:
           $CHANGELOG"
-          echo "🚀 Deploying Staging $TAG"
-
+          
+          echo "🚀 Deploying staging release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "♻️ Updating existing staging release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
+            echo "🆕 Creating new staging release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
 
@@ -217,12 +242,13 @@ jobs:
       - name: Install GitHub CLI
         run: sudo apt install gh -y
 
-      - name: Download build artifact
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
 
+      # ✅ 新增：下載 changelog artifact
       - name: Download changelog
         uses: actions/download-artifact@v4
         with:
@@ -235,19 +261,22 @@ jobs:
           TAG="prod-${{ needs.build.outputs.version }}"
           CHANGELOG=$(cat changelog.txt)
           NOTE="🚀 Official production release $TAG
-
-          ## 📝 Changelog:
+          
+          ## 📝 Changes in this release:
           $CHANGELOG
-
-          ## ✅ QA Summary
-          - ✅ Passed Lint & Test
-          - ✅ Deployed to Dev & Staging
-          - ✅ Approved for Production"
-
+          
+          ## ✅ Quality Assurance
+          - ✅ Passed all tests
+          - ✅ Deployed to dev
+          - ✅ Deployed to staging
+          - ✅ Manual approval granted"
+          
           echo "🚀 Creating production release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "♻️ Updating existing production release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
+            echo "🆕 Creating new production release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
