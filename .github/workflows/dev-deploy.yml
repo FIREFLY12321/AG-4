@@ -5,6 +5,10 @@ on:
   push:
     branches: [ main ]
 
+# 🔹 全域權限設定
+permissions:
+  contents: write  # 允許創建 release
+
 jobs:
   # ===============================
   # 🏗️ Job 1：建置階段
@@ -12,51 +16,121 @@ jobs:
   build:
     name: Build and Upload Artifact
     runs-on: ubuntu-latest
-
+    
     steps:
       # Step 1: 下載 repo 內容
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # Step 2: 安裝依賴與建置
-      - name: Install dependencies and build
+      
+      # Step 2: 快取 node_modules 加速建置
+      - name: Cache node modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      
+      # Step 3: 安裝依賴與建置
+      - name: Install dependencies
         run: |
           echo "📦 Installing dependencies..."
-          npm install
+          npm ci
+      
+      - name: Build project
+        run: |
           echo "🏗️ Building project..."
           npm run build
+          
+          # 確認 build 資料夾存在
+          if [ ! -d "build" ]; then
+            echo "❌ Build folder not found!"
+            exit 1
+          fi
+          
+          echo "✅ Build successful"
+      
+      # Step 4: 打包 build 資料夾
+      - name: Package build files
+        run: |
           echo "📁 Packaging build files..."
-          zip -r build.zip .
-
-      # Step 3: 上傳打包後的 artifact
+          cd build
+          zip -r ../build.zip .
+          cd ..
+          ls -lh build.zip
+      
+      # Step 5: 上傳打包後的 artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
           path: build.zip
+          retention-days: 7  # artifact 保留 7 天
 
   # ===============================
   # 🚀 Job 2：部署至 dev 環境
   # ===============================
   deploy-dev:
     name: Deploy to Development
-    needs: build        # ← 依賴前一個 job
+    needs: build
     runs-on: ubuntu-latest
-    environment: dev    # ← 使用 dev 環境 (你在第1部分建立的)
-
+    environment: dev  # 使用 dev 環境
+    
     steps:
-      # Step 1: 下載上個 job 的 build artifact
+      # Step 1: Checkout (gh CLI 需要)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Step 2: 下載上個 job 的 build artifact
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
-
-      # Step 2: 建立新的 GitHub Release
+      
+      # Step 3: 建立唯一的 Release Tag
+      - name: Generate release tag
+        id: tag
+        run: |
+          # 使用 run number 和短 SHA 創建唯一 tag
+          TAG="dev-${{ github.run_number }}-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "📌 Generated tag: $TAG"
+      
+      # Step 4: 建立 GitHub Release
       - name: Create Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ vars.BUILD_TAG }}
-          NOTE: ${{ vars.RELEASE_NOTE }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          NOTE: ${{ vars.RELEASE_NOTE || 'Development release' }}
         run: |
           echo "🚀 Creating release for tag: $TAG"
-          gh release create "$TAG" build.zip --notes "$NOTE"
+          
+          # 檢查 tag 是否已存在並刪除
+          if gh release view "$TAG" &>/dev/null; then
+            echo "⚠️ Release $TAG exists, deleting..."
+            gh release delete "$TAG" -y --cleanup-tag
+          fi
+          
+          # 創建新 release
+          gh release create "$TAG" build.zip \
+            --title "Dev Release #${{ github.run_number }}" \
+            --notes "**Commit:** ${{ github.sha }}
+          
+          **Branch:** ${{ github.ref_name }}
+          
+          **Triggered by:** ${{ github.actor }}
+          
+          $NOTE" \
+            --prerelease
+          
+          echo "✅ Release created successfully!"
+      
+      # Step 5: 部署成功通知 (可選)
+      - name: Deployment summary
+        run: |
+          echo "### ✅ Deployment Successful! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** dev" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Tag:** ${{ steps.tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
