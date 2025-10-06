@@ -104,13 +104,20 @@ jobs:
         with:
           name: build-artifact
           
-      - name: Create Staging Release
+      - name: Create or Update Staging Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ vars.BUILD_TAG }}
         run: |
-          echo "🚀 Creating staging release: staging-${TAG}"
-          gh release create "staging-${TAG}" build.zip --notes "Testing pre-production release"
+          echo "🚀 Creating or updating staging release: $TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "♻️ Release $TAG already exists — updating..."
+            gh release upload "$TAG" build.zip --clobber
+            gh release edit "$TAG" --notes "Updated staging release"
+          else
+            echo "🆕 Creating new release: $TAG"
+            gh release create "$TAG" build.zip --notes "Staging release"
+          fi
 
   # ===============================
   # 🎯 Job 4：部署至 production 環境
