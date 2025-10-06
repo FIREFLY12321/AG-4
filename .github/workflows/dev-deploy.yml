@@ -7,6 +7,7 @@ on:
     branches: [ main ]
 jobs:
   build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -82,15 +83,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install GitHub CLI
-        run: sudo apt install gh -y
-
+        
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
-
+          # v4 預設會下載到當前目錄
+          
+      - name: Verify artifact
+        run: |
+          echo "📦 Checking downloaded files:"
+          ls -la
+          
+      - name: Install GitHub CLI
+        run: sudo apt install gh -y
+        
       - name: Create Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,3 +106,4 @@ jobs:
         run: |
           echo "🚀 Creating release for tag: $TAG"
           gh release create "$TAG" build.zip --notes "$NOTE"
+            gh release create "$TAG" build.zip --notes "$NOTE"
