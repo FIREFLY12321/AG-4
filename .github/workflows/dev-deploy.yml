@@ -5,113 +5,58 @@ on:
   push:
     branches: [ main ]
 
-# 🔹 全域權限設定
-permissions:
-  contents: write  # 允許創建 release
-
 jobs:
+  # ===============================
+  # 🏗️ Job 1：建置階段
+  # ===============================
   build:
-    name: 🏗️ Build and Upload Artifact
+    name: Build and Upload Artifact
     runs-on: ubuntu-latest
+
     steps:
-      # 1️⃣ 下載最新 repo 程式碼
+      # Step 1: 下載 repo 內容
       - name: Checkout repository
         uses: actions/checkout@v4
-        # 等同於 git clone + 切換到當前 commit
 
-      # 2️⃣ 安裝依賴
-      - name: Install dependencies
+      # Step 2: 安裝依賴與建置
+      - name: Install dependencies and build
         run: |
           echo "📦 Installing dependencies..."
           npm install
-          # 可視情況加入安全審查: npm audit fix
-
-      # 3️⃣ 建置專案
-      - name: Build the project
-        run: |
-          echo "🏗️ Running build command..."
+          echo "🏗️ Building project..."
           npm run build
-          # 結果通常會出現在 /dist 資料夾
-
-      # 4️⃣ 打包結果
-      - name: Package build files
-        run: |
           echo "📁 Packaging build files..."
           zip -r build.zip .
-          # 壓縮整個專案目錄或僅 dist/
 
-      # 5️⃣ 上傳成 Artifact（讓 deploy job 使用）
+      # Step 3: 上傳打包後的 artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
           path: build.zip
 
-
   # ===============================
   # 🚀 Job 2：部署至 dev 環境
   # ===============================
   deploy-dev:
     name: Deploy to Development
-    needs: build
+    needs: build        # ← 依賴前一個 job
     runs-on: ubuntu-latest
-    environment: dev  # 使用 dev 環境
-    
+    environment: dev    # ← 使用 dev 環境 (你在第1部分建立的)
+
     steps:
-      # Step 1: Checkout (gh CLI 需要)
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      # Step 2: 下載上個 job 的 build artifact
+      # Step 1: 下載上個 job 的 build artifact
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
-      
-      # Step 3: 建立唯一的 Release Tag
-      - name: Generate release tag
-        id: tag
-        run: |
-          # 使用 run number 和短 SHA 創建唯一 tag
-          TAG="dev-${{ github.run_number }}-${GITHUB_SHA::7}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "📌 Generated tag: $TAG"
-      
-      # Step 4: 建立 GitHub Release
+
+      # Step 2: 建立新的 GitHub Release
       - name: Create Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.tag.outputs.tag }}
-          NOTE: ${{ vars.RELEASE_NOTE || 'Development release' }}
+          TAG: ${{ vars.BUILD_TAG }}
+          NOTE: ${{ vars.RELEASE_NOTE }}
         run: |
           echo "🚀 Creating release for tag: $TAG"
-          
-          # 檢查 tag 是否已存在並刪除
-          if gh release view "$TAG" &>/dev/null; then
-            echo "⚠️ Release $TAG exists, deleting..."
-            gh release delete "$TAG" -y --cleanup-tag
-          fi
-          
-          # 創建新 release
-          gh release create "$TAG" build.zip \
-            --title "Dev Release #${{ github.run_number }}" \
-            --notes "**Commit:** ${{ github.sha }}
-          
-          **Branch:** ${{ github.ref_name }}
-          
-          **Triggered by:** ${{ github.actor }}
-          
-          $NOTE" \
-            --prerelease
-          
-          echo "✅ Release created successfully!"
-      
-      # Step 5: 部署成功通知 (可選)
-      - name: Deployment summary
-        run: |
-          echo "### ✅ Deployment Successful! 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** dev" >> $GITHUB_STEP_SUMMARY
-          echo "- **Release Tag:** ${{ steps.tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          gh release create "$TAG" build.zip --notes "$NOTE"
