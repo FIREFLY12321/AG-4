@@ -1,5 +1,6 @@
 name: CI Dev Deployment
-
+permissions:
+  contents: write
 # 🔹 觸發時機：當 main 分支有 push 時執行
 on:
   push:
