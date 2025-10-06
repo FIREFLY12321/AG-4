@@ -18,6 +18,43 @@ jobs:
         with:
           bun-version: latest
 
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt install gh -y
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+      - name: Create Staging Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ vars.BUILD_TAG }}
+        run: |
+          echo "🚀 Creating staging release: staging-${TAG}"
+          gh release create "staging-${TAG}" build.zip --notes "Testing pre-production release"
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt install gh -y
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+      - name: Create Production Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ vars.BUILD_TAG }}
+        run: |
+          echo "🚀 Creating production release: prod-${TAG}"
+          gh release create "prod-${TAG}" build.zip --notes "Official production release"
+
+
       - name: Install dependencies and build
         run: |
           echo "📦 Installing dependencies..."
