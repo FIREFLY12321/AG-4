@@ -10,63 +10,43 @@ permissions:
   contents: write  # 允許創建 release
 
 jobs:
-  # ===============================
-  # 🏗️ Job 1：建置階段
-  # ===============================
   build:
-    name: Build and Upload Artifact
+    name: 🏗️ Build and Upload Artifact
     runs-on: ubuntu-latest
-    
     steps:
-      # Step 1: 下載 repo 內容
+      # 1️⃣ 下載最新 repo 程式碼
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      # Step 2: 快取 node_modules 加速建置
-      - name: Cache node modules
-        uses: actions/cache@v3
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-      
-      # Step 3: 安裝依賴與建置
+        # 等同於 git clone + 切換到當前 commit
+
+      # 2️⃣ 安裝依賴
       - name: Install dependencies
         run: |
           echo "📦 Installing dependencies..."
           npm install
           # 可視情況加入安全審查: npm audit fix
-      
-      - name: Build project
+
+      # 3️⃣ 建置專案
+      - name: Build the project
         run: |
-          echo "🏗️ Building project..."
+          echo "🏗️ Running build command..."
           npm run build
-          
-          # 確認 build 資料夾存在
-          if [ ! -d "build" ]; then
-            echo "❌ Build folder not found!"
-            exit 1
-          fi
-          
-          echo "✅ Build successful"
-      
-      # Step 4: 打包 build 資料夾
+          # 結果通常會出現在 /dist 資料夾
+
+      # 4️⃣ 打包結果
       - name: Package build files
         run: |
           echo "📁 Packaging build files..."
-          cd build
-          zip -r ../build.zip .
-          cd ..
-          ls -lh build.zip
-      
-      # Step 5: 上傳打包後的 artifact
+          zip -r build.zip .
+          # 壓縮整個專案目錄或僅 dist/
+
+      # 5️⃣ 上傳成 Artifact（讓 deploy job 使用）
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
           path: build.zip
-          retention-days: 7  # artifact 保留 7 天
+
 
   # ===============================
   # 🚀 Job 2：部署至 dev 環境
