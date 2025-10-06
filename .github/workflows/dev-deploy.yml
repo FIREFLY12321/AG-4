@@ -38,18 +38,26 @@ jobs:
   # ===============================
   deploy-dev:
     name: Deploy to Development
-    needs: build        # ← 依賴前一個 job
+    needs: build
     runs-on: ubuntu-latest
-    environment: dev    # ← 使用 dev 環境 (你在第1部分建立的)
-
+    environment: dev
+  
     steps:
-      # Step 1: 下載上個 job 的 build artifact
-      - name: Download artifact
+      # 1️⃣ Checkout repo：讓 gh CLI 有 .git 環境
+      - name: Checkout repository
+        uses: actions/checkout@v4
+  
+      # 2️⃣ 安裝 gh CLI（確保命令存在）
+      - name: Install GitHub CLI
+        run: sudo apt install gh -y
+  
+      # 3️⃣ 下載 build artifact
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
-
-      # Step 2: 建立新的 GitHub Release
+  
+      # 4️⃣ 建立 release
       - name: Create Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
