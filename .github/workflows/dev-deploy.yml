@@ -7,7 +7,7 @@ permissions:
 on:
   push:
     branches: [ main ]
-  pull_request: 
+  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -20,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.NEW_TAG }}
-      changelog: ${{ steps.changelog.outputs.CHANGELOG }}
     strategy:
       matrix:
         node: [18, 20]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,6 +40,7 @@ jobs:
         with:
           bun-version: latest
 
+      # 📦 自動遞增版本號
       - name: Generate Semantic Version
         id: version
         run: |
@@ -47,61 +48,55 @@ jobs:
           NEW_TAG=$(echo $LAST_TAG | awk -F. -v OFS=. '{$NF += 1 ; print}')
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "📦 New Version: $NEW_TAG"
-      # 🧾 自動產生 changelog
+
+      # 🧾 產生 changelog
       - name: Generate Changelog
-        id: changelog
-        if: matrix.node == 18  # 只在一個 matrix 執行
+        if: matrix.node == 18
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -z "$LAST_TAG" ]; then
-            CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" | head -20)
+            git log --oneline --pretty=format:"- %s (%h)" | head -20 > changelog.txt
           else
-            CHANGELOG=$(git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s (%h)")
+            git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s (%h)" > changelog.txt
           fi
-          echo "📝 Changelog generated"
-          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      # 🧪 Pre-build lint/test gate (Fail Fast)
+          echo "📝 changelog.txt generated"
+      
+      - name: Save changelog as artifact
+        if: matrix.node == 18
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: changelog.txt
+
+      # 🧪 Quality Gate：Lint + Test
       - name: 🔍 Pre-build Quality Gate
         run: |
-          echo "🔍 Running quality checks before build..."
-          
-          # Lint check (skip if not configured, fail if configured but fails)
-          echo "Running lint..."
+          echo "🔍 Running quality checks..."
           set +e
           LINT_OUTPUT=$(bun run lint 2>&1)
           LINT_EXIT=$?
+          TEST_OUTPUT=$(bun run test 2>&1)
+          TEST_EXIT=$?
           set -e
-          
-          if echo "$LINT_OUTPUT" | grep -qi "was not found\|script not found"; then
-            echo "⚠️ Warning: No lint script configured - skipping"
+
+          if echo "$LINT_OUTPUT" | grep -qi "was not found"; then
+            echo "⚠️ No lint script - skipped"
           elif [ $LINT_EXIT -ne 0 ]; then
-            echo "❌ Lint failed - stopping build"
             echo "$LINT_OUTPUT"
             exit 1
           else
             echo "✅ Lint passed"
           fi
-          
-          # Test check (skip if not configured, fail if configured but fails)
-          echo "Running tests..."
-          set +e
-          TEST_OUTPUT=$(bun run test 2>&1)
-          TEST_EXIT=$?
-          set -e
-          
-          if echo "$TEST_OUTPUT" | grep -qi "was not found\|script not found"; then
-            echo "⚠️ Warning: No test script configured - skipping"
+
+          if echo "$TEST_OUTPUT" | grep -qi "was not found"; then
+            echo "⚠️ No test script - skipped"
           elif [ $TEST_EXIT -ne 0 ]; then
-            echo "❌ Tests failed - stopping build"
             echo "$TEST_OUTPUT"
             exit 1
           else
             echo "✅ Tests passed"
           fi
-          
-          echo "✅ Quality gate passed"
+
       - name: Install dependencies and build
         run: |
           echo "📦 Installing dependencies..."
@@ -109,7 +104,8 @@ jobs:
           echo "🏗️ Building project..."
           bun run build
           zip -r build.zip .
-      - name: Upload build artifact (unique per Node)
+
+      - name: Upload build artifact (per Node)
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-${{ matrix.node }}
@@ -127,79 +123,39 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-          
+
       - name: Install GitHub CLI
         run: sudo apt install gh -y
-          
-      - name: Download all build artifacts
+
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
-            
-      - name: Verify artifact
-        run: ls -lh
-  
-      # 🔐 使用環境專屬 Secrets
+
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+
       - name: Create or Update Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.DEV_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           TAG="dev-${{ needs.build.outputs.version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
+          CHANGELOG=$(cat changelog.txt)
           NOTE="Development build $TAG
-          ## 📝 Changes in this release:
+
+          ## 📝 Changes:
           $CHANGELOG"
-          
-          echo "🚀 Deploying $TAG"
+          echo "🚀 Deploying Dev $TAG"
+
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing dev release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
-            echo "🆕 Creating new dev release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-      # 📧 PR / Issue 通知
-      - name: Notify PR/Issue on Dev Deployment
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          STATUS="${{ job.status }}"
-          VERSION="${{ needs.build.outputs.version }}"
-          
-          if [ "$STATUS" == "success" ]; then
-            MESSAGE="✅ **Dev Deployment Successful** 🎉
-            
-            - Version: \`$VERSION\`
-            - Environment: \`dev\`
-            - Release: [dev-$VERSION](https://github.com/${{ github.repository }}/releases/tag/dev-$VERSION)
-            
-            Ready for testing!"
-          else
-            MESSAGE="❌ **Dev Deployment Failed**
-            
-            - Version: \`$VERSION\`
-            - Environment: \`dev\`
-            - Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
-          fi
-          
-          # 如果是 PR，在 PR 上留言
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "$MESSAGE"
-          fi
-          
-          # 如果 commit message 中有 issue 編號，在 issue 上留言
-          ISSUES=$(git log -1 --pretty=%B | grep -oE '#[0-9]+' | tr -d '#' || echo "")
-          for ISSUE in $ISSUES; do
-            gh issue comment $ISSUE --body "$MESSAGE" || echo "Issue #$ISSUE not found"
-          done
-          
-          echo "$MESSAGE"
-      - name: Notify GitHub
-        if: always()
-        run: echo "✅ Dev deployment ${{ needs.build.outputs.version }} finished"
 
   # ===============================
   # 🧪 Job 3：部署至 staging 環境
@@ -212,78 +168,40 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-  
+
       - name: Install GitHub CLI
         run: sudo apt install gh -y
-  
-      - name: Download all build artifacts
+
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
-  
-      # 🔐 使用環境專屬 Secrets
+
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+
       - name: Create or Update Staging Release
         env:
           GITHUB_TOKEN: ${{ secrets.STG_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           TAG="staging-${{ needs.build.outputs.version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
-          NOTE="🧪 Pre-production test build $TAG
-          
-          ## 📝 Changes in this release:
+          CHANGELOG=$(cat changelog.txt)
+          NOTE="🧪 Staging build $TAG
+
+          ## 📝 Changes:
           $CHANGELOG"
-          
-          echo "🚀 Deploying staging release: $TAG"
+          echo "🚀 Deploying Staging $TAG"
+
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing staging release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
-            echo "🆕 Creating new staging release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-      # 📧 PR / Issue 通知
-      - name: Notify PR/Issue on Staging Deployment
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          STATUS="${{ job.status }}"
-          VERSION="${{ needs.build.outputs.version }}"
-          
-          if [ "$STATUS" == "success" ]; then
-            MESSAGE="🧪 **Staging Deployment Successful**
-            
-            - Version: \`$VERSION\`
-            - Environment: \`staging\`
-            - Release: [staging-$VERSION](https://github.com/${{ github.repository }}/releases/tag/staging-$VERSION)
-            
-            Ready for QA testing!"
-          else
-            MESSAGE="❌ **Staging Deployment Failed**
-            
-            - Version: \`$VERSION\`
-            - Environment: \`staging\`"
-          fi
-          
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "$MESSAGE"
-          fi
-          
-          ISSUES=$(git log -1 --pretty=%B | grep -oE '#[0-9]+' | tr -d '#' || echo "")
-          for ISSUE in $ISSUES; do
-            gh issue comment $ISSUE --body "$MESSAGE" || true
-          done
-      - name: Slack Notification
-        if: always()
-        env:
-          WEBHOOK_URL: "reggin-fke2834.slack.com"
-          #WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"🧩 Staging release *${{ needs.build.outputs.version }}* completed successfully.\"}" \
-            $WEBHOOK_URL || echo "⚠️ Slack not configured"
+
   # ===============================
   # 🎯 Job 4：部署至 production 環境（需人工批准）
   # ===============================
@@ -299,79 +217,37 @@ jobs:
       - name: Install GitHub CLI
         run: sudo apt install gh -y
 
-      - name: Download all build artifacts
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
           merge-multiple: true
 
-      # 🔐 使用環境專屬 Secrets
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+
       - name: Create Production Release
         env:
           GITHUB_TOKEN: ${{ secrets.PROD_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           TAG="prod-${{ needs.build.outputs.version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
+          CHANGELOG=$(cat changelog.txt)
           NOTE="🚀 Official production release $TAG
-          
-          ## 📝 Changes in this release:
+
+          ## 📝 Changelog:
           $CHANGELOG
-          
-          ## ✅ Quality Assurance
-          - ✅ Passed all tests
-          - ✅ Deployed to dev
-          - ✅ Deployed to staging
-          - ✅ Manual approval granted"
-          
+
+          ## ✅ QA Summary
+          - ✅ Passed Lint & Test
+          - ✅ Deployed to Dev & Staging
+          - ✅ Approved for Production"
+
           echo "🚀 Creating production release: $TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing production release..."
             gh release upload "$TAG" build.zip --clobber
             gh release edit "$TAG" --notes "$NOTE"
           else
-            echo "🆕 Creating new production release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-      # 📧 PR / Issue 通知
-      - name: Notify PR/Issue on Production Deployment
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          STATUS="${{ job.status }}"
-          VERSION="${{ needs.build.outputs.version }}"
-          
-          if [ "$STATUS" == "success" ]; then
-            MESSAGE="🚀 **Production Deployment Successful** 🎉
-            
-            - Version: \`$VERSION\`
-            - Environment: \`production\`
-            - Release: [prod-$VERSION](https://github.com/${{ github.repository }}/releases/tag/prod-$VERSION)
-            
-            ## 📝 Changelog:
-            ${{ needs.build.outputs.changelog }}
-            
-            Live now! 🌟"
-          else
-            MESSAGE="❌ **Production Deployment Failed**
-            
-            - Version: \`$VERSION\`
-            - Environment: \`production\`
-            - Rollback initiated"
-          fi
-          
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "$MESSAGE"
-          fi
-          
-          ISSUES=$(git log -1 --pretty=%B | grep -oE '#[0-9]+' | tr -d '#' || echo "")
-          for ISSUE in $ISSUES; do
-            gh issue comment $ISSUE --body "$MESSAGE" || true
-          done
-      - name: Rollback on Failure
-        if: failure()
-        env:
-          GITHUB_TOKEN: ${{ secrets.PROD_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          echo "⚠️ Production deployment failed — rolling back..."
-          gh release delete "prod-${{ needs.build.outputs.version }}" --yes || echo "No rollback needed"
