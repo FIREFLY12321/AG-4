@@ -47,12 +47,28 @@ jobs:
           NEW_TAG=$(echo $LAST_TAG | awk -F. -v OFS=. '{$NF += 1 ; print}')
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "📦 New Version: $NEW_TAG"
+
       # 🧾 自動產生 changelog
+      - name: Generate Changelog
+        id: changelog
+        if: matrix.node == 18  # 只在一個 matrix 執行
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" | head -20)
+          else
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s (%h)")
+          fi
+          echo "📝 Changelog generated"
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
       - name: Save changelog as artifact
         uses: actions/upload-artifact@v4
         with:
           name: changelog
           path: changelog.txt
+
       # 🧪 Pre-build lint/test gate (Fail Fast)
       - name: 🔍 Pre-build Quality Gate
         run: |
@@ -93,6 +109,7 @@ jobs:
           fi
           
           echo "✅ Quality gate passed"
+
       - name: Install dependencies and build
         run: |
           echo "📦 Installing dependencies..."
@@ -100,6 +117,7 @@ jobs:
           echo "🏗️ Building project..."
           bun run build
           zip -r build.zip .
+
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
@@ -139,6 +157,7 @@ jobs:
           TAG="dev-${{ needs.build.outputs.version }}"
           CHANGELOG="${{ needs.build.outputs.changelog }}"
           NOTE="Development build $TAG
+
           ## 📝 Changes in this release:
           $CHANGELOG"
           
@@ -151,6 +170,7 @@ jobs:
             echo "🆕 Creating new dev release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+
       # 📧 PR / Issue 通知
       - name: Notify PR/Issue on Dev Deployment
         if: always()
@@ -188,6 +208,7 @@ jobs:
           done
           
           echo "$MESSAGE"
+
       - name: Notify GitHub
         if: always()
         run: echo "✅ Dev deployment ${{ needs.build.outputs.version }} finished"
@@ -234,6 +255,7 @@ jobs:
             echo "🆕 Creating new staging release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+
       # 📧 PR / Issue 通知
       - name: Notify PR/Issue on Staging Deployment
         if: always()
@@ -266,6 +288,7 @@ jobs:
           for ISSUE in $ISSUES; do
             gh issue comment $ISSUE --body "$MESSAGE" || true
           done
+
       - name: Slack Notification
         if: always()
         env:
@@ -275,6 +298,7 @@ jobs:
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\"🧩 Staging release *${{ needs.build.outputs.version }}* completed successfully.\"}" \
             $WEBHOOK_URL || echo "⚠️ Slack not configured"
+
   # ===============================
   # 🎯 Job 4：部署至 production 環境（需人工批准）
   # ===============================
@@ -323,6 +347,11 @@ jobs:
             echo "🆕 Creating new production release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+      - name: Save changelog as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: changelog.txt
       # 📧 PR / Issue 通知
       - name: Notify PR/Issue on Production Deployment
         if: always()
@@ -359,6 +388,7 @@ jobs:
           for ISSUE in $ISSUES; do
             gh issue comment $ISSUE --body "$MESSAGE" || true
           done
+
       - name: Rollback on Failure
         if: failure()
         env:
