@@ -63,7 +63,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifact
+          name: build-artifact-${{ matrix.node }}
           path: build.zip
           retention-days: 1
 
