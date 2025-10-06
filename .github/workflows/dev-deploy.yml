@@ -4,36 +4,34 @@ name: CI Dev Deployment
 on:
   push:
     branches: [ main ]
-
 jobs:
-  # ===============================
-  # 🏗️ Job 1：建置階段
-  # ===============================
   build:
-    name: Build and Upload Artifact
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: 下載 repo 內容
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: 安裝依賴與建置
+      # 安裝 Bun
+      - name: Install Bun runtime
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
       - name: Install dependencies and build
         run: |
           echo "📦 Installing dependencies..."
-          npm install
+          bun install
           echo "🏗️ Building project..."
-          npm run build
+          bun run build
           echo "📁 Packaging build files..."
           zip -r build.zip .
 
-      # Step 3: 上傳打包後的 artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
           path: build.zip
+
 
   # ===============================
   # 🚀 Job 2：部署至 dev 環境
