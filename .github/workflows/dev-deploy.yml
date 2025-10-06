@@ -82,10 +82,11 @@ jobs:
       - name: Install GitHub CLI
         run: sudo apt install gh -y
 
-      - name: Download build artifact
+      - name: Download all build artifact
         uses: actions/download-artifact@v4
         with:
-          name: build-artifact
+          pattern: build-artifact-*
+          merge-multiple: true
 
       - name: Create or Update Dev Release
         env:
