@@ -69,20 +69,30 @@ jobs:
         run: |
           echo "🔍 Running quality checks before build..."
           
-          # Lint check (fail if not configured properly)
-          if bun run lint 2>&1 | grep -q "command not found\|script not found"; then
-            echo "⚠️ Warning: No lint script configured"
+          # Lint check (skip if not configured, fail if configured but fails)
+          echo "Running lint..."
+          LINT_OUTPUT=$(bun run lint 2>&1 || true)
+          if echo "$LINT_OUTPUT" | grep -qi "script not found"; then
+            echo "⚠️ Warning: No lint script configured - skipping"
+          elif [ $? -ne 0 ] && ! echo "$LINT_OUTPUT" | grep -qi "script not found"; then
+            echo "❌ Lint failed - stopping build"
+            echo "$LINT_OUTPUT"
+            exit 1
           else
-            echo "Running lint..."
-            bun run lint || { echo "❌ Lint failed - stopping build"; exit 1; }
+            echo "✅ Lint passed"
           fi
           
-          # Test check (fail fast if tests fail)
-          if bun run test 2>&1 | grep -q "command not found\|script not found"; then
-            echo "⚠️ Warning: No test script configured"
+          # Test check (skip if not configured, fail if configured but fails)
+          echo "Running tests..."
+          TEST_OUTPUT=$(bun run test 2>&1 || true)
+          if echo "$TEST_OUTPUT" | grep -qi "script not found"; then
+            echo "⚠️ Warning: No test script configured - skipping"
+          elif [ $? -ne 0 ] && ! echo "$TEST_OUTPUT" | grep -qi "script not found"; then
+            echo "❌ Tests failed - stopping build"
+            echo "$TEST_OUTPUT"
+            exit 1
           else
-            echo "Running tests..."
-            bun run test || { echo "❌ Tests failed - stopping build"; exit 1; }
+            echo "✅ Tests passed"
           fi
           
           echo "✅ Quality gate passed"
