@@ -68,14 +68,21 @@ jobs:
           echo "📦 Checking downloaded files:"
           ls -la
           
-      - name: Create Dev Release
+      - name: Create or Update Dev Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ vars.BUILD_TAG }}
           NOTE: ${{ vars.RELEASE_NOTE }}
         run: |
-          echo "🚀 Creating release for tag: $TAG"
-          gh release create "$TAG" build.zip --notes "$NOTE"
+          echo "🚀 Creating or updating release for tag: $TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "♻️ Release $TAG already exists — updating it..."
+            gh release upload "$TAG" build.zip --clobber
+            gh release edit "$TAG" --notes "$NOTE"
+          else
+            echo "🆕 Creating new release for tag: $TAG"
+            gh release create "$TAG" build.zip --notes "$NOTE"
+          fi
 
   # ===============================
   # 🧪 Job 3：部署至 staging 環境
