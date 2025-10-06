@@ -71,10 +71,14 @@ jobs:
           
           # Lint check (skip if not configured, fail if configured but fails)
           echo "Running lint..."
-          LINT_OUTPUT=$(bun run lint 2>&1 || true)
-          if echo "$LINT_OUTPUT" | grep -qi "script not found"; then
+          set +e
+          LINT_OUTPUT=$(bun run lint 2>&1)
+          LINT_EXIT=$?
+          set -e
+          
+          if echo "$LINT_OUTPUT" | grep -qi "was not found\|script not found"; then
             echo "⚠️ Warning: No lint script configured - skipping"
-          elif [ $? -ne 0 ] && ! echo "$LINT_OUTPUT" | grep -qi "script not found"; then
+          elif [ $LINT_EXIT -ne 0 ]; then
             echo "❌ Lint failed - stopping build"
             echo "$LINT_OUTPUT"
             exit 1
@@ -84,10 +88,14 @@ jobs:
           
           # Test check (skip if not configured, fail if configured but fails)
           echo "Running tests..."
-          TEST_OUTPUT=$(bun run test 2>&1 || true)
-          if echo "$TEST_OUTPUT" | grep -qi "script not found"; then
+          set +e
+          TEST_OUTPUT=$(bun run test 2>&1)
+          TEST_EXIT=$?
+          set -e
+          
+          if echo "$TEST_OUTPUT" | grep -qi "was not found\|script not found"; then
             echo "⚠️ Warning: No test script configured - skipping"
-          elif [ $? -ne 0 ] && ! echo "$TEST_OUTPUT" | grep -qi "script not found"; then
+          elif [ $TEST_EXIT -ne 0 ]; then
             echo "❌ Tests failed - stopping build"
             echo "$TEST_OUTPUT"
             exit 1
