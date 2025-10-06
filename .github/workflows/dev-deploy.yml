@@ -62,7 +62,7 @@ jobs:
           bun run build
           zip -r build.zip .
 
-      - name: Run Lint and Tests (Fail Fast but tolerant)
+      - name: Run Lint and Tests (Tolerant Gate)
         run: |
           echo "🔍 Running lint..."
           if bun run | grep -q "lint"; then
@@ -77,6 +77,7 @@ jobs:
           else
             echo "⚠️ No test script found, skipping tests."
           fi
+
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
