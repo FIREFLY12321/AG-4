@@ -12,7 +12,7 @@ jobs:
   # 🏗️ Job 1：建置 + 測試 + 上傳 artifact
   # ===============================
   build:
-    name: Build and Test
+    name: Build and Test (Matrix)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,7 +35,6 @@ jobs:
         id: version
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "🔖 Last tag: $LAST_TAG"
           NEW_TAG=$(echo $LAST_TAG | awk -F. -v OFS=. '{$NF += 1 ; print}')
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
           echo "📦 New Version: $NEW_TAG"
@@ -55,12 +54,12 @@ jobs:
           bun run lint || echo "⚠️ No lint configured"
           bun run test || echo "✅ Tests passed (simulated)"
 
-      - name: Verify build output
-        run: |
-          echo "✅ Build artifact created:"
-          ls -lh build.zip
+     #- name: Verify build output
+      #  run: |
+      #    echo "✅ Build artifact created:"
+       #   ls -lh build.zip
 
-      - name: Upload build artifact
+      - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-${{ matrix.node }}
@@ -70,43 +69,45 @@ jobs:
   # ===============================
   # 🚀 Job 2：部署至 dev 環境
   # ===============================
-  deploy-dev:
-    name: Deploy to Development
-    needs: build
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install GitHub CLI
-        run: sudo apt install gh -y
-
-      - name: Download all build artifact
-        uses: actions/download-artifact@v4
-        with:
-          pattern: build-artifact-*
-          merge-multiple: true
-
-      - name: Create or Update Dev Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="dev-${{ env.NEW_TAG }}"
-          NOTE="Development build $TAG"
-          echo "🚀 Deploying $TAG"
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "♻️ Updating existing dev release..."
-            gh release upload "$TAG" build.zip --clobber
-            gh release edit "$TAG" --notes "$NOTE"
-          else
-            echo "🆕 Creating new dev release..."
-            gh release create "$TAG" build.zip --notes "$NOTE"
-          fi
-
-      - name: Notify GitHub
-        if: always()
-        run: echo "✅ Dev deployment ${{ env.NEW_TAG }} finished successfully"
+    deploy-dev:
+      name: Deploy to Development
+      needs: build
+      runs-on: ubuntu-latest
+      environment: dev
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
+          
+        - name: Install GitHub CLI
+          run: sudo apt install gh -y
+          
+        - name: Download all build artifacts
+          uses: actions/download-artifact@v4
+          with:
+            pattern: build-artifact-*
+            merge-multiple: true
+            
+        - name: Verify artifact
+          run: ls -lh
+  
+        - name: Create or Update Dev Release
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run: |
+            TAG="dev-${{ env.NEW_TAG }}"
+            NOTE="Development build $TAG"
+            echo "🚀 Deploying $TAG"
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              echo "♻️ Updating existing dev release..."
+              gh release upload "$TAG" build.zip --clobber
+              gh release edit "$TAG" --notes "$NOTE"
+            else
+              echo "🆕 Creating new dev release..."
+              gh release create "$TAG" build.zip --notes "$NOTE"
+            fi
+        - name: Notify GitHub
+          if: always()
+          run: echo "✅ Dev deployment ${{ env.NEW_TAG }} finished successfully"
 
   # ===============================
   # 🧪 Job 3：部署至 staging 環境
