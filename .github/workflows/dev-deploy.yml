@@ -129,11 +129,135 @@ jobs:
           retention-days: 1
 
   # ===============================
-  # 🚀 Job 2：部署至 dev 環境
+  # 🧪 Job 2：執行單元測試
+  # ===============================
+  test-unit:
+    name: Run Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TEST_ENV: unit
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Bun runtime
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-artifact-*
+          merge-multiple: true
+
+      - name: Extract artifact
+        run: unzip build.zip -d build
+
+      - name: Install dependencies
+        working-directory: build
+        run: bun install
+
+      - name: Run unit tests
+        working-directory: build
+        run: |
+          set -o pipefail
+          bun run test:unit | tee test-results-unit.txt
+
+      - name: Upload unit test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs
+          path: build/test-results-unit.txt
+          if-no-files-found: warn
+
+  # ===============================
+  # 🧪 Job 3：執行整合測試與覆蓋率
+  # ===============================
+  test-integration:
+    name: Run Integration Tests & Coverage
+    needs: test-unit
+    runs-on: ubuntu-latest
+    env:
+      TEST_ENV: integration
+      COVERAGE_THRESHOLD: 80
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Bun runtime
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-artifact-*
+          merge-multiple: true
+
+      - name: Extract artifact
+        run: unzip build.zip -d build
+
+      - name: Install dependencies
+        working-directory: build
+        run: bun install
+
+      - name: Run integration tests
+        working-directory: build
+        run: |
+          set -o pipefail
+          bun run test:integration | tee test-results-integration.txt
+
+      - name: Run coverage across all tests
+        working-directory: build
+        run: |
+          set -o pipefail
+          bun run test:coverage | tee coverage-summary.txt
+
+      - name: Enforce coverage threshold
+        working-directory: build
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const summary = fs.readFileSync('coverage-summary.txt', 'utf8');
+            const match = summary.match(/# all files\s*\|\s*([\d.]+)/);
+            if (!match) {
+              console.error('❌ Unable to locate coverage data');
+              process.exit(1);
+            }
+            const coverage = parseFloat(match[1]);
+            const threshold = Number(process.env.COVERAGE_THRESHOLD);
+            console.log('📊 Line coverage:', coverage + '%');
+            if (coverage < threshold) {
+              console.error(`❌ Coverage ${coverage}% is below threshold ${threshold}%`);
+              process.exit(1);
+            }
+          "
+
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            build/coverage-summary.txt
+            build/test-results-integration.txt
+          if-no-files-found: warn
+
+  # ===============================
+  # 🚀 Job 4：部署至 dev 環境
   # ===============================
   deploy-dev:
     name: Deploy to Development
-    needs: build
+    needs: [build, test-integration]
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -180,7 +304,7 @@ jobs:
           fi
 
   # ===============================
-  # 🧪 Job 3：部署至 staging 環境
+  # 🧪 Job 5：部署至 staging 環境
   # ===============================
   deploy-staging:
     name: Deploy to Staging
@@ -228,7 +352,7 @@ jobs:
           fi
 
   # ===============================
-  # 🎯 Job 4：部署至 production 環境（需人工批准）
+  # 🎯 Job 6：部署至 production 環境（需人工批准）
   # ===============================
   deploy-production:
     name: Deploy to Production

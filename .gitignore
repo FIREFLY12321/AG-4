@@ -1,3 +1,6 @@
 setEnv.bat
 
 node_modules
+coverage
+test-results-*.txt
+coverage-summary.txt
