@@ -1,3 +1,7 @@
+
+[![CI/CD Pipeline](https://github.com/FIREFLY12321/AG-4/actions/workflows/dev-deploy.yml/badge.svg)](https://github.com/FIREFLY12321/AG-4/actions/workflows/dev-deploy.yml)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-green)](https://github.com/FIREFLY12321/AG-4/actions)
+
 <h1 align="center" id="title">Activity Log</h1>
 
 ![activity log](https://socialify.git.ci/TheDanniCraft/activity-log/image?forks=1&issues=1&language=1&logo=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F66677362&name=1&owner=1&pattern=Solid&pulls=1&stargazers=1&theme=Auto)

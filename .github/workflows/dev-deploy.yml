@@ -127,7 +127,7 @@ jobs:
           fi
           echo "🏗️ Building project..."
           bun run build
-          zip -r build.zip .
+          zip -r build.zip . -x "build.zip" -x "build.zip/*" -x ".git/*" -x "node_modules/*"
 
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
@@ -135,6 +135,27 @@ jobs:
           name: build-artifact-${{ matrix.node }}
           path: build.zip
           retention-days: 1
+
+      - name: Notify on Deployment Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `## Deployment Failure
+              
+              **Environment:** Production
+              **Version:** ${{ needs.build.outputs.version }}
+              **Workflow Run:** [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Immediate Action Required
+              Production deployment has failed. Please investigate immediately.`,
+              labels: ['critical', 'deployment-failure'],
+              assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
+            })    
 
   # ===============================
   # 🧪 Job 2：執行單元測試
@@ -205,6 +226,26 @@ jobs:
           name: unit-test-logs
           path: build/test-results-unit.txt
           if-no-files-found: warn
+      - name: Notify on Deployment Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `## Deployment Failure
+              
+              **Environment:** Production
+              **Version:** ${{ needs.build.outputs.version }}
+              **Workflow Run:** [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Immediate Action Required
+              Production deployment has failed. Please investigate immediately.`,
+              labels: ['critical', 'deployment-failure'],
+              assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
+            })    
 
   # ===============================
   # 🧪 Job 3：執行整合測試與覆蓋率
@@ -305,7 +346,82 @@ jobs:
             build/coverage-summary.txt
             build/test-results-integration.txt
           if-no-files-found: warn
+      - name: Create Issue on Test Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '❌ Integration Tests Failed',
+              body: `## Test Failure Report
+              
+              **Workflow:** ${context.workflow}
+              **Run ID:** ${context.runId}
+              **Commit:** ${context.sha}
+              
+              [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Action Required
+              Please review and fix the failing tests before proceeding with deployment.`,
+              labels: ['bug', 'ci-failure']
+            })
+      - name: Generate Coverage Badge
+        working-directory: build
+        run: |
+          # 從 coverage-summary.txt 提取覆蓋率
+          COVERAGE=$(grep "# all files" coverage-summary.txt | awk '{print $4}' | sed 's/%//')
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          
+          # 生成顏色
+          if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+          echo "COVERAGE_COLOR=$COLOR" >> $GITHUB_ENV
 
+      - name: Comment Coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coverage = process.env.COVERAGE;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 📊 Test Coverage Report
+              
+              **Coverage:** ${coverage}%
+              **Threshold:** 80%
+              **Status:** ${coverage >= 80 ? '✅ PASSED' : '❌ FAILED'}
+              
+              [View Full Report](${context.payload.repository.html_url}/actions/runs/${context.runId})`
+            })
+      - name: Notify on Deployment Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `## Deployment Failure
+              
+              **Environment:** Production
+              **Version:** ${{ needs.build.outputs.version }}
+              **Workflow Run:** [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Immediate Action Required
+              Production deployment has failed. Please investigate immediately.`,
+              labels: ['critical', 'deployment-failure'],
+              assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
+            })        
   # ===============================
   # 🚀 Job 4：部署至 dev 環境
   # ===============================
@@ -356,6 +472,26 @@ jobs:
             echo "🆕 Creating new dev release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+      - name: Notify on Deployment Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `## Deployment Failure
+              
+              **Environment:** Production
+              **Version:** ${{ needs.build.outputs.version }}
+              **Workflow Run:** [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Immediate Action Required
+              Production deployment has failed. Please investigate immediately.`,
+              labels: ['critical', 'deployment-failure'],
+              assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
+            })      
 
   # ===============================
   # 🧪 Job 5：部署至 staging 環境
@@ -404,7 +540,26 @@ jobs:
             echo "🆕 Creating new staging release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
-
+      - name: Notify on Deployment Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `## Deployment Failure
+              
+              **Environment:** Production
+              **Version:** ${{ needs.build.outputs.version }}
+              **Workflow Run:** [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Immediate Action Required
+              Production deployment has failed. Please investigate immediately.`,
+              labels: ['critical', 'deployment-failure'],
+              assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
+            })          
   # ===============================
   # 🎯 Job 6：部署至 production 環境（需人工批准）
   # ===============================
@@ -458,3 +613,23 @@ jobs:
             echo "🆕 Creating new production release..."
             gh release create "$TAG" build.zip --notes "$NOTE"
           fi
+      - name: Notify on Deployment Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `## Deployment Failure
+              
+              **Environment:** Production
+              **Version:** ${{ needs.build.outputs.version }}
+              **Workflow Run:** [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+              
+              ### Immediate Action Required
+              Production deployment has failed. Please investigate immediately.`,
+              labels: ['critical', 'deployment-failure'],
+              assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
+            })            
