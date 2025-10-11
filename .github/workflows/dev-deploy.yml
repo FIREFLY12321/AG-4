@@ -76,6 +76,9 @@ jobs:
       - name: 🔍 Pre-build Quality Gate
         run: |
           echo "🔍 Running quality checks before build..."
+
+          echo "📦 Installing dependencies for checks..."
+          bun install
           
           # Lint check (skip if not configured, fail if configured but fails)
           echo "Running lint..."
@@ -115,8 +118,13 @@ jobs:
 
       - name: Install dependencies and build
         run: |
-          echo "📦 Installing dependencies..."
-          bun install
+          echo "📦 Ensuring dependencies..."
+          if [ ! -d node_modules ]; then
+            echo "🆕 node_modules not found, installing..."
+            bun install
+          else
+            echo "✅ node_modules already present, skipping install"
+          fi
           echo "🏗️ Building project..."
           bun run build
           zip -r build.zip .
