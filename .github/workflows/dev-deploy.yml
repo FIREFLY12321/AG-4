@@ -116,6 +116,19 @@ jobs:
           
           echo "✅ Quality gate passed"
 
+      - name: Build and Package Artifact
+        run: |
+          echo "🛠️ Building project for Node ${{ matrix.node }}..."
+          bun run build
+          
+          echo "🧹 Cleaning previous archives..."
+          rm -f build-${{ matrix.node }}.zip
+          
+          echo "🗜️ Creating distributable archive..."
+          zip -r build-${{ matrix.node }}.zip . \
+            -x ".git/*" "*.git" "node_modules/*" "build-*.zip" "changelog.txt"
+          echo "✅ Archive ready: build-${{ matrix.node }}.zip"
+
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
@@ -179,7 +192,7 @@ jobs:
             exit 1
           fi
           echo "📦 解壓縮 artifact: $ZIP_FILE"
-          unzip -oq build-artifact-18/build-18.zip -d build || unzip -oq build-artifact-20/build-20.zip -d build
+          unzip -oq "$ZIP_FILE" -d build
 
       - name: Install dependencies
         working-directory: build
@@ -261,7 +274,7 @@ jobs:
             exit 1
           fi
           echo "📦 解壓縮 artifact: $ZIP_FILE"
-          unzip -oq build-artifact-18/build-18.zip -d build || unzip -oq build-artifact-20/build-20.zip -d build
+          unzip -oq "$ZIP_FILE" -d build
 
       - name: Install dependencies
         working-directory: build
@@ -419,6 +432,17 @@ jobs:
           
       - name: Verify artifact
         run: ls -lh
+
+      - name: Prepare release archive
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "build-*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ 找不到 build-*.zip artifact"
+            ls -R
+            exit 1
+          fi
+          echo "📦 Using artifact: $ZIP_FILE"
+          cp "$ZIP_FILE" build.zip
   
       # 🔐 使用環境專屬 Secrets
       - name: Create or Update Dev Release
@@ -487,6 +511,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: changelog
+
+      - name: Prepare release archive
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "build-*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ 找不到 build-*.zip artifact"
+            ls -R
+            exit 1
+          fi
+          echo "📦 Using artifact: $ZIP_FILE"
+          cp "$ZIP_FILE" build.zip
   
       - name: Create or Update Staging Release
         env:
@@ -554,6 +589,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: changelog
+
+      - name: Prepare release archive
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "build-*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ 找不到 build-*.zip artifact"
+            ls -R
+            exit 1
+          fi
+          echo "📦 Using artifact: $ZIP_FILE"
+          cp "$ZIP_FILE" build.zip
 
       - name: Create Production Release
         env:
