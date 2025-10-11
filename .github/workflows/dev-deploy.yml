@@ -163,11 +163,32 @@ jobs:
           merge-multiple: true
 
       - name: Extract artifact
-        run: unzip build.zip -d build
+        run: |
+          set -e
+          mkdir -p build
+          FOUND=0
+          for zip in build-artifact-20/build.zip build.zip build-artifact-*/build.zip; do
+            if [ -f "$zip" ]; then
+              echo "📦 解壓縮 artifact: $zip"
+              unzip -oq "$zip" -d build
+              FOUND=1
+              break
+            fi
+          done
+          if [ $FOUND -eq 0 ]; then
+            echo "❌ 找不到可用的 build artifact"
+            ls -R
+            exit 1
+          fi
 
       - name: Install dependencies
         working-directory: build
-        run: bun install
+        run: |
+          if [ -d node_modules ]; then
+            echo "✅ node_modules 已存在，略過安裝"
+          else
+            bun install
+          fi
 
       - name: Run unit tests
         working-directory: build
@@ -211,11 +232,32 @@ jobs:
           merge-multiple: true
 
       - name: Extract artifact
-        run: unzip build.zip -d build
+        run: |
+          set -e
+          mkdir -p build
+          FOUND=0
+          for zip in build-artifact-20/build.zip build.zip build-artifact-*/build.zip; do
+            if [ -f "$zip" ]; then
+              echo "📦 解壓縮 artifact: $zip"
+              unzip -oq "$zip" -d build
+              FOUND=1
+              break
+            fi
+          done
+          if [ $FOUND -eq 0 ]; then
+            echo "❌ 找不到可用的 build artifact"
+            ls -R
+            exit 1
+          fi
 
       - name: Install dependencies
         working-directory: build
-        run: bun install
+        run: |
+          if [ -d node_modules ]; then
+            echo "✅ node_modules 已存在，略過安裝"
+          else
+            bun install
+          fi
 
       - name: Run integration tests
         working-directory: build
