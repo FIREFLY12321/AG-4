@@ -116,25 +116,11 @@ jobs:
           
           echo "✅ Quality gate passed"
 
-      - name: Install dependencies and build
-        run: |
-          echo "📦 Ensuring dependencies..."
-          if [ ! -d node_modules ]; then
-            echo "🆕 node_modules not found, installing..."
-            bun install
-          else
-            echo "✅ node_modules already present, skipping install"
-          fi
-          echo "🏗️ Building project..."
-          bun run build
-          zip -r build.zip . -x "build.zip" -x "build.zip/*" -x ".git/*" -x "node_modules/*"
-
       - name: Upload build artifact (unique per Node)
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-${{ matrix.node }}
-          path: build.zip
-          retention-days: 1
+          path: build-${{ matrix.node }}.zip
 
       - name: Notify on Deployment Failure
         if: failure()
@@ -181,28 +167,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Extract artifact
         run: |
           mkdir -p build
-          FOUND=0
-          for zip in build-artifact-*/build.zip build.zip; do
-            if [ -f "$zip" ]; then
-              echo "📦 解壓縮 artifact: $zip"
-              if unzip -oq "$zip" -d build; then
-                FOUND=1
-                break
-              else
-                echo "⚠️ 解壓縮 $zip 失敗，嘗試下一個候選檔案..."
-              fi
-            fi
-          done
-          if [ $FOUND -eq 0 ]; then
-            echo "❌ 找不到可用的 build artifact"
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "build-*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ 找不到 build-*.zip artifact"
             ls -R
             exit 1
           fi
+          echo "📦 解壓縮 artifact: $ZIP_FILE"
+          unzip -oq build-artifact-18/build-18.zip -d build || unzip -oq build-artifact-20/build-20.zip -d build
 
       - name: Install dependencies
         working-directory: build
@@ -272,28 +249,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Extract artifact
         run: |
           mkdir -p build
-          FOUND=0
-          for zip in build-artifact-*/build.zip build.zip; do
-            if [ -f "$zip" ]; then
-              echo "📦 解壓縮 artifact: $zip"
-              if unzip -oq "$zip" -d build; then
-                FOUND=1
-                break
-              else
-                echo "⚠️ 解壓縮 $zip 失敗，嘗試下一個候選檔案..."
-              fi
-            fi
-          done
-          if [ $FOUND -eq 0 ]; then
-            echo "❌ 找不到可用的 build artifact"
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "build-*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ 找不到 build-*.zip artifact"
             ls -R
             exit 1
           fi
+          echo "📦 解壓縮 artifact: $ZIP_FILE"
+          unzip -oq build-artifact-18/build-18.zip -d build || unzip -oq build-artifact-20/build-20.zip -d build
 
       - name: Install dependencies
         working-directory: build
@@ -441,7 +409,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
-          merge-multiple: true
+          merge-multiple: false
 
       # ✅ 新增：下載 changelog artifact
       - name: Download changelog
@@ -512,7 +480,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: build-artifact-*
-          merge-multiple: true
+          merge-multiple: false
 
       # ✅ 新增：下載 changelog artifact
       - name: Download changelog
