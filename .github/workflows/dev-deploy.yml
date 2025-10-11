@@ -164,15 +164,17 @@ jobs:
 
       - name: Extract artifact
         run: |
-          set -e
           mkdir -p build
           FOUND=0
-          for zip in build-artifact-20/build.zip build.zip build-artifact-*/build.zip; do
+          for zip in build-artifact-*/build.zip build.zip; do
             if [ -f "$zip" ]; then
               echo "📦 解壓縮 artifact: $zip"
-              unzip -oq "$zip" -d build
-              FOUND=1
-              break
+              if unzip -oq "$zip" -d build; then
+                FOUND=1
+                break
+              else
+                echo "⚠️ 解壓縮 $zip 失敗，嘗試下一個候選檔案..."
+              fi
             fi
           done
           if [ $FOUND -eq 0 ]; then
@@ -233,15 +235,17 @@ jobs:
 
       - name: Extract artifact
         run: |
-          set -e
           mkdir -p build
           FOUND=0
-          for zip in build-artifact-20/build.zip build.zip build-artifact-*/build.zip; do
+          for zip in build-artifact-*/build.zip build.zip; do
             if [ -f "$zip" ]; then
               echo "📦 解壓縮 artifact: $zip"
-              unzip -oq "$zip" -d build
-              FOUND=1
-              break
+              if unzip -oq "$zip" -d build; then
+                FOUND=1
+                break
+              else
+                echo "⚠️ 解壓縮 $zip 失敗，嘗試下一個候選檔案..."
+              fi
             fi
           done
           if [ $FOUND -eq 0 ]; then
