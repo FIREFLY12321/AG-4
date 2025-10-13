@@ -568,7 +568,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: allure-report
-          artifact-name: allure-pages
+          name: allure-pages
 
   # ===============================
   # 🌐 Job 5：部署 Allure 報告至 GitHub Pages
@@ -589,7 +589,7 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          artifact-name: allure-pages
+          artifact_name: allure-pages
 
   # ===============================
   # 🚀 Job 6：部署至 dev 環境
