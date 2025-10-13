@@ -10,7 +10,9 @@
 		"build": "bun i && ncc build src/index.js --license licenses.txt",
 		"test": "node --test tests",
 		"test:unit": "node --test tests/unit",
+		"test:unit:ci": "node -e \"require('node:fs').mkdirSync('reports/junit', { recursive: true });\" && node --test --test-reporter=junit --test-reporter-destination=reports/junit/unit-tests.xml tests/unit",
 		"test:integration": "node --test tests/integration",
+		"test:integration:ci": "node -e \"require('node:fs').mkdirSync('reports/junit', { recursive: true });\" && node --test --test-reporter=junit --test-reporter-destination=reports/junit/integration-tests.xml tests/integration",
 		"test:coverage": "node --test --experimental-test-coverage tests"
 	},
 	"devDependencies": {

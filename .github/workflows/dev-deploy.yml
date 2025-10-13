@@ -3,6 +3,8 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  pages: write
+  id-token: write
 
 on:
   push:
@@ -203,11 +205,15 @@ jobs:
             bun install
           fi
 
+      - name: Prepare test report directories
+        working-directory: build
+        run: mkdir -p reports/junit
+
       - name: Run unit tests
         working-directory: build
         run: |
           set -o pipefail
-          bun run test:unit | tee test-results-unit.txt
+          bun run test:unit:ci | tee test-results-unit.txt
 
       - name: Upload unit test logs
         if: always()
@@ -215,6 +221,14 @@ jobs:
         with:
           name: unit-test-logs
           path: build/test-results-unit.txt
+          if-no-files-found: warn
+
+      - name: Upload unit JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-unit
+          path: build/reports/junit/unit-tests.xml
           if-no-files-found: warn
       - name: Notify on Deployment Failure
         if: failure()
@@ -285,11 +299,15 @@ jobs:
             bun install
           fi
 
+      - name: Prepare test report directories
+        working-directory: build
+        run: mkdir -p reports/junit
+
       - name: Run integration tests
         working-directory: build
         run: |
           set -o pipefail
-          bun run test:integration | tee test-results-integration.txt
+          bun run test:integration:ci | tee test-results-integration.txt
 
       - name: Run coverage across all tests
         working-directory: build
@@ -326,6 +344,14 @@ jobs:
           path: |
             build/coverage-summary.txt
             build/test-results-integration.txt
+          if-no-files-found: warn
+
+      - name: Upload integration JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-integration
+          path: build/reports/junit/integration-tests.xml
           if-no-files-found: warn
       - name: Create Issue on Test Failure
         if: failure()
@@ -476,7 +502,92 @@ jobs:
             
 
   # ===============================
-  # 🚀 Job 4：部署至 dev 環境
+  # 📊 Job 4：彙總測試報告（JUnit + Allure）
+  # ===============================
+  test-reports:
+    name: Generate Aggregated Test Reports
+    needs: test-integration
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: 準備報告目錄
+        run: mkdir -p reports/junit
+
+      - name: Download JUnit reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: junit-*
+          path: reports/junit
+          merge-multiple: true
+
+      - name: 檢查是否存在 JUnit 報告
+        id: check-junit
+        run: |
+          if ls reports/junit/*.xml >/dev/null 2>&1; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ 未找到 JUnit 報告，略過 Allure 生成"
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Allure CLI
+        if: steps.check-junit.outputs.found == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y allure
+
+      - name: Generate Allure report
+        if: steps.check-junit.outputs.found == 'true'
+        run: |
+          mkdir -p reports/allure-results
+          cp reports/junit/*.xml reports/allure-results/
+          allure generate reports/allure-results --clean -o allure-report
+
+      - name: Upload aggregated JUnit reports
+        if: steps.check-junit.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-aggregate
+          path: reports/junit/*.xml
+
+      - name: Upload Allure HTML report
+        if: steps.check-junit.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report
+
+      - name: Upload Allure report for Pages
+        if: github.event_name != 'pull_request' && steps.check-junit.outputs.found == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report
+          artifact-name: allure-pages
+
+  # ===============================
+  # 🌐 Job 5：部署 Allure 報告至 GitHub Pages
+  # ===============================
+  deploy-allure-pages:
+    name: Deploy Allure Report to GitHub Pages
+    needs: test-reports
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Allure report
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact-name: allure-pages
+
+  # ===============================
+  # 🚀 Job 6：部署至 dev 環境
   # ===============================
   deploy-dev:
     name: Deploy to Development
@@ -558,7 +669,7 @@ jobs:
             })      
 
   # ===============================
-  # 🧪 Job 5：部署至 staging 環境
+  # 🧪 Job 7：部署至 staging 環境
   # ===============================
   deploy-staging:
     name: Deploy to Staging
@@ -636,7 +747,7 @@ jobs:
               assignees: ['FIREFLY12321']  // 你的 GitHub 用戶名
             })          
   # ===============================
-  # 🎯 Job 6：部署至 production 環境（需人工批准）
+  # 🎯 Job 8：部署至 production 環境（需人工批准）
   # ===============================
   deploy-production:
     name: Deploy to Production
