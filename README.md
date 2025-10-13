@@ -26,6 +26,17 @@ A GitHub Action that automatically updates your README file with the latest acti
 - Markdown or HTML Output Styles
 - Hide Details on Private Repositories
 
+## 🏅 Status Badges
+
+| Badge | Description | Link |
+| ----- | ----------- | ---- |
+| CI/CD Pipeline | Tracks the status of the `dev-deploy.yml` workflow to confirm deploys stay healthy. | [![CI/CD Pipeline](https://github.com/FIREFLY12321/AG-4/actions/workflows/dev-deploy.yml/badge.svg)](https://github.com/FIREFLY12321/AG-4/actions/workflows/dev-deploy.yml) |
+| Coverage | Highlights the current test coverage exposed through Shields.io. Update the percentage to match your latest numbers. | [![Coverage](https://img.shields.io/badge/coverage-80%25-green)](https://github.com/FIREFLY12321/AG-4/actions) |
+| Count of Action Users | Uses a dynamic Shields.io endpoint to show how many repositories depend on this action. | ![Count of Action Users](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/TheDanniCraft/endpoints/refs/heads/master/badge/activity-log.json&style=for-the-badge) |
+| CodeFactor Grade | Surface automated static analysis results from CodeFactor. | ![CodeFactor Grade](https://www.codefactor.io/repository/github/thedannicraft/activity-log/badge?style=for-the-badge) |
+
+> Copy the badges you want directly into your project README to keep important health signals front and center.
+
 ## ✍️ Example
 
 <!--START_SECTION:activity-->
